@@ -18,6 +18,7 @@ mongoose.connect(MONGO_URI).then(() => {
             backupSyncIntervalMs: 300000 // Backup session setiap 5 menit
         }),
         puppeteer: {
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
             headless: true,
             args: [
                 '--no-sandbox',
