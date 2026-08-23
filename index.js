@@ -1,6 +1,4 @@
-const { Client, RemoteAuth } = require('whatsapp-web.js');
-const { MongoStore } = require('wwebjs-mongo');
-const mongoose = require('mongoose');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
 const qrcode = require('qrcode');
 const { exec } = require('child_process');
@@ -9,9 +7,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 let currentQr = '';
 
+// ================= 1. SERVER WEB SCAN QR =================
 app.get('/', async (req, res) => {
   if (!currentQr) {
-    return res.send('<div style="text-align:center; padding-top: 50px; font-family:sans-serif;"><h2>QR Code belum siap atau bot sudah terhubung!</h2><p>Cek log di Railway jika bot sudah login.</p></div>');
+    return res.send(`
+      <div style="text-align:center; padding-top: 50px; font-family:sans-serif;">
+        <h2>Bot WhatsApp Berhasil Terhubung! ✅</h2>
+        <p>Silakan tes kirim pesan <b>!jadwal</b> dari WhatsApp.</p>
+      </div>
+    `);
   }
   try {
     const qrImage = await qrcode.toDataURL(currentQr);
@@ -37,65 +41,54 @@ app.listen(PORT, () => {
   console.log(`Server web QR berjalan di port ${PORT}`);
 });
 
-const MONGO_URI = process.env.MONGO_URI;
-
-mongoose.connect(MONGO_URI).then(() => {
-  console.log('Terhubung ke MongoDB Atlas!');
-
-  const store = new MongoStore({ mongoose: mongoose });
-
-  const client = new Client({
-    authStrategy: new RemoteAuth({
-      store: store,
-      backupSyncIntervalMs: 300000
-    }),
-    puppeteer: {
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ]
-    }
-  });
-
-  client.on('qr', (qr) => {
-    currentQr = qr;
-    console.log('QR Code baru dihasilkan. Silakan buka domain publik Railway!');
-  });
-
-  client.on('ready', () => {
-    currentQr = '';
-    console.log('Bot WhatsApp Berhasil Terhubung!');
-  });
-
-  // Fitur Pemanggil Script Python get_jadwal.py
-  client.on('message', async (msg) => {
-    const pesan = msg.body.trim().toLowerCase();
-
-    if (pesan === '!ping' || pesan === 'ping') {
-      await msg.reply('pong! Bot WhatsApp aktif 🚀');
-    } else if (pesan === '!jadwal' || pesan === '!getjadwal') {
-      await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
-
-      exec('python3 get_jadwal.py', (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Error: ${error}`);
-          return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
-        }
-        const output = stdout.trim() || '✅ Selesai memproses jadwal.';
-        msg.reply(output);
-      });
-    }
-  });
-
-  client.initialize();
-}).catch((err) => {
-  console.error('Gagal terhubung ke MongoDB:', err);
+// ================= 2. CLIENT WHATSAPP (LOCAL AUTH) =================
+const client = new Client({
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu'
+    ]
+  }
 });
+
+client.on('qr', (qr) => {
+  currentQr = qr;
+  console.log('QR Code baru dihasilkan. Silakan scan via domain publik Railway!');
+});
+
+client.on('ready', () => {
+  currentQr = '';
+  console.log('Bot WhatsApp Berhasil Terhubung!');
+});
+
+// ================= 3. LISTEN PESAN WHATSAPP =================
+client.on('message', async (msg) => {
+  const pesan = msg.body.trim().toLowerCase();
+
+  if (pesan === '!ping' || pesan === 'ping') {
+    await msg.reply('pong! 🚀 Bot WhatsApp aktif.');
+  } 
+  else if (pesan === '!jadwal' || pesan === '!getjadwal') {
+    await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
+
+    exec('python3 get_jadwal.py', (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error executing python: ${error}`);
+        return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
+      }
+      const output = stdout.trim() || '✅ Selesai memproses jadwal.';
+      msg.reply(output);
+    });
+  }
+});
+
+client.initialize();
