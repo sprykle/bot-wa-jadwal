@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const { MongoStore } = require('wwebjs-mongo');
 
 // URL MongoDB Atlas (Bisa dibaca dari environment variable atau string langsung)
-const MONGO_URI = process.env.MONGO_URI || 'MONGODB_URI_KAMU_DI_SINI';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://hiuomponk2108_db_user:o4wDP4RjKO6Fx6ut@cluster0.rmciri1b.mongodb.net/wabotsession?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI).then(() => {
     console.log('Terhubung ke MongoDB Atlas!');
