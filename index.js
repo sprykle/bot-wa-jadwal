@@ -1,14 +1,8 @@
 const { Client, RemoteAuth } = require('whatsapp-web.js');
 const { MongoStore } = require('wwebjs-mongo');
 const mongoose = require('mongoose');
-const qrcode = require('qrcode-terminal');
 
 const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-  console.error('ERROR: MONGO_URI tidak ditemukan di Environment Variables Railway!');
-  process.exit(1);
-}
 
 mongoose.connect(MONGO_URI).then(() => {
   console.log('Terhubung ke MongoDB Atlas!');
@@ -36,28 +30,16 @@ mongoose.connect(MONGO_URI).then(() => {
     }
   });
 
+  // Tampilkan string QR mentah agar bisa di-generate sendiri jika perlu
   client.on('qr', (qr) => {
-    console.log('\n=================== SCAN QR CODE ===================\n');
-    qrcode.generate(qr, { small: true });
-    console.log('\n====================================================\n');
+    console.log('==================================================');
+    console.log('QR CODE DATA URL (Copy teks di bawah lalu buka di browser/QR generator):');
+    console.log(qr);
+    console.log('==================================================');
   });
 
   client.on('ready', () => {
-    console.log('Client is ready! Bot WhatsApp berhasil aktif.');
-  });
-
-  client.on('authenticated', () => {
-    console.log('Autentikasi berhasil! Sesi tersimpan ke MongoDB.');
-  });
-
-  client.on('auth_failure', (msg) => {
-    console.error('Gagal autentikasi:', msg);
-  });
-
-  client.on('message', async (msg) => {
-    if (msg.body === '!ping') {
-      msg.reply('pong');
-    }
+    console.log('Client is ready! Bot WhatsApp Berhasil Konek!');
   });
 
   client.initialize();
