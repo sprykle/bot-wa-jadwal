@@ -5,13 +5,12 @@ const express = require('express');
 const qrcode = require('qrcode');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 let currentQr = '';
 
-// Route Web untuk Menampilkan Gambar QR Code
 app.get('/', async (req, res) => {
   if (!currentQr) {
-    return res.send('<h2>QR Code belum siap atau bot sudah berhasil login! Silakan cek log Railway.</h2>');
+    return res.send('<div style="text-align:center; padding-top: 50px; font-family:sans-serif;"><h2>QR Code belum siap atau bot sudah terhubung!</h2><p>Cek log di Railway jika bot sudah login.</p></div>');
   }
   try {
     const qrImage = await qrcode.toDataURL(currentQr);
@@ -19,22 +18,22 @@ app.get('/', async (req, res) => {
       <html>
         <head>
           <title>Scan WA Bot QR Code</title>
-          <meta http-equiv="refresh" content="15">
+          <meta http-equiv="refresh" content="10">
         </head>
-        <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif;">
-          <h2>Scan QR Code Bot WhatsApp</h2>
-          <img src="${qrImage}" style="width:300px; height:300px;" />
-          <p>Halaman ini akan refresh otomatis setiap 15 detik.</p>
+        <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background-color: #f0f2f5;">
+          <h2 style="color: #075e54;">Scan QR Code WhatsApp Bot</h2>
+          <img src="${qrImage}" style="width:300px; height:300px; border: 10px solid white; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+          <p style="color: #666; margin-top: 15px;">Halaman otomatis refresh setiap 10 detik</p>
         </body>
       </html>
     `);
   } catch (err) {
-    res.status(500).send('Error generating QR Code');
+    res.status(500).send('Gagal membuat gambar QR Code');
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server web QR Code berjalan di port ${port}`);
+app.listen(PORT, () => {
+  console.log(`Server web QR berjalan di port ${PORT}`);
 });
 
 const MONGO_URI = process.env.MONGO_URI;
@@ -67,12 +66,12 @@ mongoose.connect(MONGO_URI).then(() => {
 
   client.on('qr', (qr) => {
     currentQr = qr;
-    console.log('QR Code baru berhasil di-generate! Silakan buka domain Railway kamu.');
+    console.log('QR Code baru dihasilkan. Silakan buka domain publik Railway!');
   });
 
   client.on('ready', () => {
     currentQr = '';
-    console.log('Client is ready! Bot WhatsApp Berhasil Konek!');
+    console.log('Bot WhatsApp Berhasil Terhubung!');
   });
 
   client.initialize();

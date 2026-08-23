@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install Chromium dan pustaka pendukung
+# Install Chromium dan library Linux pendukung lengkap
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -50,5 +50,7 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+
+EXPOSE 3000
 
 CMD ["node", "index.js"]
