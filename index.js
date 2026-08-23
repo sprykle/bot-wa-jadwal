@@ -1,73 +1,66 @@
 const { Client, RemoteAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const { exec } = require('child_process');
-const mongoose = require('mongoose');
 const { MongoStore } = require('wwebjs-mongo');
+const mongoose = require('mongoose');
+const qrcode = require('qrcode-terminal');
 
-// URL MongoDB Atlas (Bisa dibaca dari environment variable atau string langsung)
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://hiuomponk2108_db_user:o4wDP4RjKO6Fx6ut@cluster0.rmciri1b.mongodb.net/wabotsession?retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  console.error('ERROR: MONGO_URI tidak ditemukan di Environment Variables Railway!');
+  process.exit(1);
+}
 
 mongoose.connect(MONGO_URI).then(() => {
-    console.log('Terhubung ke MongoDB Atlas!');
-    
-    const store = new MongoStore({ mongoose: mongoose });
-    
-    const client = new Client({
-        authStrategy: new RemoteAuth({
-            store: store,
-            backupSyncIntervalMs: 300000 // Backup session setiap 5 menit
-        }),
-        puppeteer: {
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process',
-                '--disable-gpu'
-            ]
-        }
-    });
+  console.log('Terhubung ke MongoDB Atlas!');
 
-    client.on('qr', (qr) => {
-        console.log('Scan QR Code berikut untuk login:');
-        require('qrcode-terminal').generate(qr, { small: true });
-    });
+  const store = new MongoStore({ mongoose: mongoose });
 
-    client.on('ready', () => {
-        console.log('Bot WA Online & Sesi tersimpan di MongoDB!');
-    });
+  const client = new Client({
+    authStrategy: new RemoteAuth({
+      store: store,
+      backupSyncIntervalMs: 300000
+    }),
+    puppeteer: {
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ]
+    }
+  });
 
-    client.on('message', async (msg) => {
-        const pesan = msg.body.trim().toLowerCase();
+  client.on('qr', (qr) => {
+    console.log('\n=================== SCAN QR CODE ===================\n');
+    qrcode.generate(qr, { small: true });
+    console.log('\n====================================================\n');
+  });
 
-        if (pesan === '!jadwal') {
-            console.log(`Menerima perintah !jadwal dari ${msg.from}`);
+  client.on('ready', () => {
+    console.log('Client is ready! Bot WhatsApp berhasil aktif.');
+  });
 
-            // Menjalankan script Python get_jadwal.py
-            exec('python3 get_jadwal.py', (error, stdout, stderr) => {
-                if (error) {
-                    console.error(`Error Exec: ${error.message}`);
-                    // Fallback jika di Windows memakai perintah 'python'
-                    exec('python get_jadwal.py', (errWin, stdoutWin) => {
-                        if (errWin) {
-                            msg.reply('Gagal mengambil data jadwal.');
-                            return;
-                        }
-                        msg.reply(stdoutWin);
-                    });
-                    return;
-                }
-                msg.reply(stdout);
-            });
-        }
-    });
+  client.on('authenticated', () => {
+    console.log('Autentikasi berhasil! Sesi tersimpan ke MongoDB.');
+  });
 
-    client.initialize();
-}).catch(err => {
-    console.error('Gagal terhubung ke MongoDB:', err);
+  client.on('auth_failure', (msg) => {
+    console.error('Gagal autentikasi:', msg);
+  });
+
+  client.on('message', async (msg) => {
+    if (msg.body === '!ping') {
+      msg.reply('pong');
+    }
+  });
+
+  client.initialize();
+}).catch((err) => {
+  console.error('Gagal terhubung ke MongoDB:', err);
 });
