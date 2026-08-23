@@ -1,0 +1,27 @@
+[phases.setup]
+aptPkgs = [
+  "glib",
+  "nss",
+  "nspr",
+  "atk",
+  "cups",
+  "dbus",
+  "expat",
+  "fontconfig",
+  "freetype",
+  "gdk-pixbuf",
+  "gtk3",
+  "libX11",
+  "libXcomposite",
+  "libXcursor",
+  "libXdamage",
+  "libXext",
+  "libXfixes",
+  "libXrandr",
+  "libxkbcommon",
+  "pango",
+  "alsa-lib",
+  "libdrm",
+  "libgbm",
+  "libxcb"
+]
