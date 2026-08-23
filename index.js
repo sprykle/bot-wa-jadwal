@@ -3,6 +3,7 @@ const { MongoStore } = require('wwebjs-mongo');
 const mongoose = require('mongoose');
 const express = require('express');
 const qrcode = require('qrcode');
+const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -72,6 +73,26 @@ mongoose.connect(MONGO_URI).then(() => {
   client.on('ready', () => {
     currentQr = '';
     console.log('Bot WhatsApp Berhasil Terhubung!');
+  });
+
+  // Fitur Pemanggil Script Python get_jadwal.py
+  client.on('message', async (msg) => {
+    const pesan = msg.body.trim().toLowerCase();
+
+    if (pesan === '!ping' || pesan === 'ping') {
+      await msg.reply('pong! Bot WhatsApp aktif 🚀');
+    } else if (pesan === '!jadwal' || pesan === '!getjadwal') {
+      await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
+
+      exec('python3 get_jadwal.py', (error, stdout, stderr) => {
+        if (error) {
+          console.error(`Error: ${error}`);
+          return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
+        }
+        const output = stdout.trim() || '✅ Selesai memproses jadwal.';
+        msg.reply(output);
+      });
+    }
   });
 
   client.initialize();
