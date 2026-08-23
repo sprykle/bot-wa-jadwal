@@ -41,7 +41,7 @@ app.listen(PORT, () => {
   console.log(`Server web QR berjalan di port ${PORT}`);
 });
 
-// ================= 2. CLIENT WHATSAPP (LOCAL AUTH) =================
+// ================= 2. CLIENT WHATSAPP (RAM OPTIMIZED) =================
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
@@ -55,7 +55,8 @@ const client = new Client({
       '--no-first-run',
       '--no-zygote',
       '--single-process',
-      '--disable-gpu'
+      '--disable-gpu',
+      '--js-flags="--max-old-space-size=512"'
     ]
   }
 });
@@ -70,15 +71,17 @@ client.on('ready', () => {
   console.log('Bot WhatsApp Berhasil Terhubung!');
 });
 
-// ================= 3. LISTEN PESAN WHATSAPP (MENGGUNAKAN message_create) =================
+client.on('disconnected', (reason) => {
+  console.log('Client terputus:', reason);
+});
+
+// ================= 3. LISTEN PESAN WHATSAPP =================
 client.on('message_create', async (msg) => {
   const pesan = msg.body.trim().toLowerCase();
 
-  // Uji coba status bot
   if (pesan === '!ping' || pesan === 'ping') {
     await msg.reply('pong! 🚀 Bot WhatsApp aktif.');
   } 
-  // Memanggil script get_jadwal.py
   else if (pesan === '!jadwal' || pesan === '!getjadwal') {
     await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
 
@@ -87,10 +90,6 @@ client.on('message_create', async (msg) => {
         console.error(`Error executing python: ${error}`);
         return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
       }
-      if (stderr) {
-        console.error(`Python stderr: ${stderr}`);
-      }
-
       const output = stdout.trim() || '✅ Selesai memproses jadwal.';
       msg.reply(output);
     });
