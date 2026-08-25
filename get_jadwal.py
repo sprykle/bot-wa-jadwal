@@ -1,39 +1,45 @@
-const XLSX = require('xlsx');
+from datetime import datetime, timezone, timedelta
+import pandas as pd
 
-// Fungsi pembaca jadwal tanpa Python
-function getJadwal() {
-  try {
-    const workbook = XLSX.readFile('23 Agustus -- Jadwal MatKul.xlsx');
-    let allData = [];
-    
-    workbook.SheetNames.forEach(sheetName => {
-      const sheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(sheet);
-      allData = allData.concat(data);
-    });
+def get_jadwal():
+    file_path = '23 Agustus -- Jadwal MatKul.xlsx'
 
-    // Sesuaikan waktu WIB (UTC+7)
-    const now = new Date();
-    const wibOffset = 7 * 60;
-    const wibTime = new Date(now.getTime() + (wibOffset + now.getTimezoneOffset()) * 60000);
-    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const hariTarget = days[wibTime.getDay()];
+    xls = pd.ExcelFile(file_path)
+    list_df = [pd.read_excel(file_path, sheet_name=sheet) for sheet in xls.sheet_names]
+    df_all = pd.concat(list_df, ignore_index=True)
 
-    const dfHari = allData.filter(row => row['Hari'] === hariTarget);
-    if (dfHari.length === 0) return `Tidak ada jadwal kuliah untuk hari ${hariTarget}.`;
+    # Pakai WIB (UTC+7) secara eksplisit — server Railway biasanya jalan di UTC,
+    # jadi kalau pakai datetime.now() polos, "hari ini" bisa salah pas dini hari WIB.
+    wib = timezone(timedelta(hours=7))
+    hari_ini_en = datetime.now(wib).strftime('%A')
+    mapping_hari = {
+        'Monday': 'Senin',
+        'Tuesday': 'Selasa',
+        'Wednesday': 'Rabu',
+        'Thursday': 'Kamis',
+        'Friday': 'Jumat',
+        'Saturday': 'Sabtu',
+        'Sunday': 'Minggu'
+    }
+    hari_target = mapping_hari.get(hari_ini_en, hari_ini_en)
 
-    let pesan = `=== JADWAL HARI INI (${hariTarget.toUpperCase()}) ===\n`;
-    dfHari.forEach(row => {
-      pesan += `\n[${row['Jam'] || '-'}] - [${row['Ruang'] || '-'}] ${row['Nama MK'] || '-'}\n`;
-    });
-    return pesan;
-  } catch (err) {
-    return '❌ Gagal membaca file jadwal.';
-  }
-}
+    df_hari = df_all[df_all['Hari'] == hari_target]
+    if df_hari.empty:
+        return f'Tidak ada jadwal kuliah untuk hari {hari_target}.'
 
-// Di dalam client.on('message_create'):
-else if (pesan === '!jadwal' || pesan === '!getjadwal') {
-  const hasilJadwal = getJadwal();
-  await msg.reply(hasilJadwal);
-}
+    kolom = ['Ruang', 'Nama MK', 'Hari', 'Jam']
+    df_bersih = df_hari[kolom].copy()
+    df_bersih['Ruang'] = df_bersih['Ruang'].astype(str).str.replace(r'\s+\d+$', '', regex=True)
+    df_bersih = df_bersih.drop_duplicates().sort_values(by='Jam')
+
+    pesan = f'=== JADWAL HARI INI ({hari_target.upper()}) ===\n'
+    for jam, group in df_bersih.groupby('Jam'):
+        pesan += f'\n{jam}\n'
+        for _, row in group.iterrows():
+            ruang = row['Ruang']
+            nama_mk = row['Nama MK']
+            pesan += f' - [{ruang}] {nama_mk}\n'
+    return pesan
+
+if __name__ == '__main__':
+    print(get_jadwal())
