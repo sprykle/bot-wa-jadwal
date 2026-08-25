@@ -8,14 +8,23 @@ const { exec } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 let currentQr = '';
+let isReady = false; // status koneksi WA yang SEBENARNYA — beda dari "belum ada QR"
 
 // ================= 1. SERVER WEB SCAN QR =================
 app.get('/', async (req, res) => {
-  if (!currentQr) {
+  if (isReady) {
     return res.send(`
       <div style="text-align:center; padding-top: 50px; font-family:sans-serif;">
         <h2>Bot WhatsApp Berhasil Terhubung! ✅</h2>
         <p>Silakan tes kirim pesan <b>!jadwal</b> dari WhatsApp.</p>
+      </div>
+    `);
+  }
+  if (!currentQr) {
+    return res.send(`
+      <div style="text-align:center; padding-top: 50px; font-family:sans-serif;">
+        <h2>⏳ Belum siap</h2>
+        <p>Klien WhatsApp belum menghasilkan QR code (masih starting up, atau gagal konek ke MongoDB/Chromium). Cek log Deployments di Railway, lalu refresh halaman ini beberapa saat lagi.</p>
       </div>
     `);
   }
@@ -80,6 +89,7 @@ mongoose.connect(process.env.MONGODB_URI).then(() => {
 
   client.on('ready', () => {
     currentQr = '';
+    isReady = true;
     console.log('Bot WhatsApp Berhasil Terhubung!');
   });
 
@@ -88,6 +98,7 @@ mongoose.connect(process.env.MONGODB_URI).then(() => {
   });
 
   client.on('disconnected', (reason) => {
+    isReady = false;
     console.log('Client terputus:', reason);
   });
 
