@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 def get_jadwal():
@@ -8,31 +8,37 @@ def get_jadwal():
     list_df = [pd.read_excel(file_path, sheet_name=sheet) for sheet in xls.sheet_names]
     df_all = pd.concat(list_df, ignore_index=True)
 
-    hari_ini_en = datetime.now().strftime('%A')
+    # Pakai WIB (UTC+7) secara eksplisit — server Railway biasanya jalan di UTC,
+    # jadi kalau pakai datetime.now() polos, "hari ini" bisa salah pas dini hari WIB.
+    wib = timezone(timedelta(hours=7))
+    hari_ini_en = datetime.now(wib).strftime('%A')
     mapping_hari = {
         'Monday': 'Senin',
         'Tuesday': 'Selasa',
         'Wednesday': 'Rabu',
         'Thursday': 'Kamis',
-        'Friday': 'Jumat'
+        'Friday': 'Jumat',
+        'Saturday': 'Sabtu',
+        'Sunday': 'Minggu'
     }
-    hari_target = mapping_hari.get(hari_ini_en, 'Jumat')
+    hari_target = mapping_hari.get(hari_ini_en, hari_ini_en)
 
     df_hari = df_all[df_all['Hari'] == hari_target]
     if df_hari.empty:
         return f'Tidak ada jadwal kuliah untuk hari {hari_target}.'
 
     kolom = ['Ruang', 'Nama MK', 'Hari', 'Jam']
-    df_hari = df_hari[kolom].copy()
-    df_hari['Ruang'] = df_bersih['Ruang'].astype(str).str.reaplace(r'\s+\d+$', '', regex=True)
-
+    df_bersih = df_hari[kolom].copy()
+    df_bersih['Ruang'] = df_bersih['Ruang'].astype(str).str.replace(r'\s+\d+$', '', regex=True)
     df_bersih = df_bersih.drop_duplicates().sort_values(by='Jam')
 
     pesan = f'=== JADWAL HARI INI ({hari_target.upper()}) ===\n'
     for jam, group in df_bersih.groupby('Jam'):
         pesan += f'\n{jam}\n'
         for _, row in group.iterrows():
-            pesan += f' - [{row['Ruang']}] {row['Nama MK']}\n'
+            ruang = row['Ruang']
+            nama_mk = row['Nama MK']
+            pesan += f' - [{ruang}] {nama_mk}\n'
     return pesan
 
 if __name__ == '__main__':

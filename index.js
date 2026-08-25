@@ -1,4 +1,6 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, RemoteAuth } = require('whatsapp-web.js');
+const { MongoStore } = require('wwebjs-mongo');
+const mongoose = require('mongoose');
 const express = require('express');
 const qrcode = require('qrcode');
 const { exec } = require('child_process');
@@ -41,59 +43,76 @@ app.listen(PORT, () => {
   console.log(`Server web QR berjalan di port ${PORT}`);
 });
 
-// ================= 2. CLIENT WHATSAPP (RAM OPTIMIZED) =================
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: {
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu',
-      '--js-flags="--max-old-space-size=512"'
-    ]
-  }
+// ================= 2. KONEKSI MONGODB + CLIENT WHATSAPP (RAM OPTIMIZED) =================
+// RemoteAuth + MongoStore dipakai (bukan LocalAuth) supaya sesi WA tidak hilang
+// tiap kali Railway redeploy/restart container — filesystem container Railway
+// tidak persisten, jadi LocalAuth akan selalu minta scan QR ulang di sana.
+// Butuh env var MONGODB_URI di Railway (provision MongoDB, lalu isi connection string-nya).
+mongoose.connect(process.env.MONGODB_URI).then(() => {
+  const store = new MongoStore({ mongoose });
+
+  const client = new Client({
+    authStrategy: new RemoteAuth({
+      store: store,
+      backupSyncIntervalMs: 300000 // minimal 60000 (ms)
+    }),
+    puppeteer: {
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--js-flags="--max-old-space-size=512"'
+      ]
+    }
+  });
+
+  client.on('qr', (qr) => {
+    currentQr = qr;
+    console.log('QR Code baru dihasilkan. Silakan scan via domain publik Railway!');
+  });
+
+  client.on('ready', () => {
+    currentQr = '';
+    console.log('Bot WhatsApp Berhasil Terhubung!');
+  });
+
+  client.on('remote_session_saved', () => {
+    console.log('Sesi WhatsApp berhasil disimpan ke MongoDB.');
+  });
+
+  client.on('disconnected', (reason) => {
+    console.log('Client terputus:', reason);
+  });
+
+  // ================= 3. LISTEN PESAN WHATSAPP =================
+  client.on('message_create', async (msg) => {
+    const pesan = msg.body.trim().toLowerCase();
+
+    if (pesan === '!ping' || pesan === 'ping') {
+      await msg.reply('pong! 🚀 Bot WhatsApp aktif.');
+    } 
+    else if (pesan === '!jadwal' || pesan === '!getjadwal') {
+      await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
+
+      exec('python3 get_jadwal.py', (error, stdout, stderr) => {
+        if (error) {
+          console.error(`Error executing python: ${error}`);
+          return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
+        }
+        const output = stdout.trim() || '✅ Selesai memproses jadwal.';
+        msg.reply(output);
+      });
+    }
+  });
+
+  client.initialize();
+}).catch((err) => {
+  console.error('Gagal konek ke MongoDB:', err);
 });
-
-client.on('qr', (qr) => {
-  currentQr = qr;
-  console.log('QR Code baru dihasilkan. Silakan scan via domain publik Railway!');
-});
-
-client.on('ready', () => {
-  currentQr = '';
-  console.log('Bot WhatsApp Berhasil Terhubung!');
-});
-
-client.on('disconnected', (reason) => {
-  console.log('Client terputus:', reason);
-});
-
-// ================= 3. LISTEN PESAN WHATSAPP =================
-client.on('message_create', async (msg) => {
-  const pesan = msg.body.trim().toLowerCase();
-
-  if (pesan === '!ping' || pesan === 'ping') {
-    await msg.reply('pong! 🚀 Bot WhatsApp aktif.');
-  } 
-  else if (pesan === '!jadwal' || pesan === '!getjadwal') {
-    await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
-
-    exec('python3 get_jadwal.py', (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error executing python: ${error}`);
-        return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
-      }
-      const output = stdout.trim() || '✅ Selesai memproses jadwal.';
-      msg.reply(output);
-    });
-  }
-});
-
-client.initialize();
