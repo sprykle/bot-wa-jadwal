@@ -87,7 +87,33 @@ mongoose.connect(process.env.MONGODB_URI).then(() => {
         '--no-zygote',
         '--single-process',
         '--disable-gpu',
-        '--js-flags="--max-old-space-size=512"'
+        // --- flag tambahan biar Chromium hemat RAM ---
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-breakpad',
+        '--disable-client-side-phishing-detection',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-default-apps',
+        '--disable-domain-reliability',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-notifications',
+        '--disable-popup-blocking',
+        '--disable-print-preview',
+        '--disable-prompt-on-repost',
+        '--disable-speech-api',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--blink-settings=imagesEnabled=false', // matikan load foto profil/media WA Web — bot ini cuma butuh teks
+        '--js-flags="--max-old-space-size=256"'
       ]
     }
   });
