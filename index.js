@@ -1,6 +1,4 @@
-const { Client, RemoteAuth } = require('whatsapp-web.js');
-const { MongoStore } = require('wwebjs-mongo');
-const mongoose = require('mongoose');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
 const qrcode = require('qrcode');
 const { exec } = require('child_process');
@@ -10,12 +8,8 @@ const PORT = process.env.PORT || 3000;
 let currentQr = '';
 let isReady = false; // status koneksi WA yang SEBENARNYA — beda dari "belum ada QR"
 
-// RemoteAuth (whatsapp-web.js) punya bug yang cukup dikenal: kadang gagal baca
-// file .zip backup sesi yang baru saja ditulis (race condition di internal
-// library-nya), lalu ini nge-throw 'error' event tanpa listener -> uncaught
-// exception -> proses Node mati -> Railway auto-restart -> minta scan QR lagi.
-// Ini bukan bug di kode kita, jadi kita tangkap di level process supaya bot
-// nggak mati total gara-gara satu backup gagal.
+// Safety net umum: kalau ada error tak terduga dari library manapun,
+// jangan sampai menjatuhkan seluruh proses.
 process.on('uncaughtException', (err) => {
   console.error('⚠️ Uncaught exception (bot tetap jalan, tidak restart):', err.message);
 });
@@ -34,7 +28,7 @@ app.get('/', async (req, res) => {
     return res.send(`
       <div style="text-align:center; padding-top: 50px; font-family:sans-serif;">
         <h2>⏳ Belum siap</h2>
-        <p>Klien WhatsApp belum menghasilkan QR code (masih starting up, atau gagal konek ke MongoDB/Chromium). Cek log Deployments di Railway, lalu refresh halaman ini beberapa saat lagi.</p>
+        <p>Klien WhatsApp belum menghasilkan QR code (masih starting up). Cek log Deployments di Railway, lalu refresh halaman ini beberapa saat lagi.</p>
       </div>
     `);
   }
@@ -62,104 +56,97 @@ app.listen(PORT, () => {
   console.log(`Server web QR berjalan di port ${PORT}`);
 });
 
-// ================= 2. KONEKSI MONGODB + CLIENT WHATSAPP (RAM OPTIMIZED) =================
-// RemoteAuth + MongoStore dipakai (bukan LocalAuth) supaya sesi WA tidak hilang
-// tiap kali Railway redeploy/restart container — filesystem container Railway
-// tidak persisten, jadi LocalAuth akan selalu minta scan QR ulang di sana.
-// Butuh env var MONGODB_URI di Railway (provision MongoDB, lalu isi connection string-nya).
-mongoose.connect(process.env.MONGODB_URI).then(() => {
-  const store = new MongoStore({ mongoose });
-
-  const client = new Client({
-    authStrategy: new RemoteAuth({
-      store: store,
-      backupSyncIntervalMs: 300000 // minimal 60000 (ms)
-    }),
-    puppeteer: {
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        // --- flag tambahan biar Chromium hemat RAM ---
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-breakpad',
-        '--disable-client-side-phishing-detection',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-default-apps',
-        '--disable-domain-reliability',
-        '--disable-hang-monitor',
-        '--disable-ipc-flooding-protection',
-        '--disable-notifications',
-        '--disable-popup-blocking',
-        '--disable-print-preview',
-        '--disable-prompt-on-repost',
-        '--disable-speech-api',
-        '--disable-sync',
-        '--metrics-recording-only',
-        '--mute-audio',
-        '--no-default-browser-check',
-        '--no-pings',
-        '--password-store=basic',
-        '--use-mock-keychain',
-        '--blink-settings=imagesEnabled=false', // matikan load foto profil/media WA Web — bot ini cuma butuh teks
-        '--js-flags="--max-old-space-size=256"'
-      ]
-    }
-  });
-
-  client.on('qr', (qr) => {
-    currentQr = qr;
-    console.log('QR Code baru dihasilkan. Silakan scan via domain publik Railway!');
-  });
-
-  client.on('ready', () => {
-    currentQr = '';
-    isReady = true;
-    console.log('Bot WhatsApp Berhasil Terhubung!');
-  });
-
-  client.on('remote_session_saved', () => {
-    console.log('Sesi WhatsApp berhasil disimpan ke MongoDB.');
-  });
-
-  client.on('disconnected', (reason) => {
-    isReady = false;
-    console.log('Client terputus:', reason);
-  });
-
-  // ================= 3. LISTEN PESAN WHATSAPP =================
-  client.on('message_create', async (msg) => {
-    const pesan = msg.body.trim().toLowerCase();
-
-    if (pesan === '!ping' || pesan === 'ping') {
-      await msg.reply('pong! 🚀 Bot WhatsApp aktif.');
-    } 
-    else if (pesan === '!jadwal' || pesan === '!getjadwal') {
-      await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
-
-      exec('python3 get_jadwal.py', (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Error executing python: ${error}`);
-          return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
-        }
-        const output = stdout.trim() || '✅ Selesai memproses jadwal.';
-        msg.reply(output);
-      });
-    }
-  });
-
-  client.initialize();
-}).catch((err) => {
-  console.error('Gagal konek ke MongoDB:', err);
+// ================= 2. CLIENT WHATSAPP (RAM OPTIMIZED) =================
+// Balik ke LocalAuth (bukan RemoteAuth+MongoDB) — RemoteAuth kena bug zip
+// yang belum diperbaiki di library-nya (wwebjs-mongo sudah setahun lebih
+// nggak di-update). LocalAuth nyimpen sesi langsung sebagai file biasa,
+// tanpa proses kompres/zip, jadi bug itu nggak relevan lagi di sini.
+//
+// Supaya sesi tetap TIDAK hilang tiap Railway redeploy, dataPath di bawah
+// harus menunjuk ke folder yang ada di dalam Railway VOLUME (bukan folder
+// biasa di container, yang selalu direset tiap redeploy).
+const client = new Client({
+  authStrategy: new LocalAuth({
+    dataPath: '/data/.wwebjs_auth'
+  }),
+  puppeteer: {
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu',
+      // --- flag tambahan biar Chromium hemat RAM ---
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-breakpad',
+      '--disable-client-side-phishing-detection',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-default-apps',
+      '--disable-domain-reliability',
+      '--disable-hang-monitor',
+      '--disable-ipc-flooding-protection',
+      '--disable-notifications',
+      '--disable-popup-blocking',
+      '--disable-print-preview',
+      '--disable-prompt-on-repost',
+      '--disable-speech-api',
+      '--disable-sync',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--no-default-browser-check',
+      '--no-pings',
+      '--password-store=basic',
+      '--use-mock-keychain',
+      '--blink-settings=imagesEnabled=false', // matikan load foto profil/media WA Web — bot ini cuma butuh teks
+      '--js-flags="--max-old-space-size=256"'
+    ]
+  }
 });
+
+client.on('qr', (qr) => {
+  currentQr = qr;
+  console.log('QR Code baru dihasilkan. Silakan scan via domain publik Railway!');
+});
+
+client.on('ready', () => {
+  currentQr = '';
+  isReady = true;
+  console.log('Bot WhatsApp Berhasil Terhubung!');
+});
+
+client.on('disconnected', (reason) => {
+  isReady = false;
+  console.log('Client terputus:', reason);
+});
+
+// ================= 3. LISTEN PESAN WHATSAPP =================
+client.on('message_create', async (msg) => {
+  const pesan = msg.body.trim().toLowerCase();
+
+  if (pesan === '!ping' || pesan === 'ping') {
+    await msg.reply('pong! 🚀 Bot WhatsApp aktif.');
+  } 
+  else if (pesan === '!jadwal' || pesan === '!getjadwal') {
+    await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
+
+    exec('python3 get_jadwal.py', (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error executing python: ${error}`);
+        return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
+      }
+      const output = stdout.trim() || '✅ Selesai memproses jadwal.';
+      msg.reply(output);
+    });
+  }
+});
+
+client.initialize();
