@@ -1,10 +1,8 @@
 FROM node:18-slim
 
-# Install Chromium, Python3 (buat get_jadwal.py), dan library Linux pendukung lengkap
+# Install Chromium dan library Linux pendukung lengkap
 RUN apt-get update && apt-get install -y \
     chromium \
-    python3 \
-    python3-pip \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -42,9 +40,6 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
-
-# Library Python yang dipakai get_jadwal.py
-RUN pip3 install --no-cache-dir --break-system-packages pandas openpyxl
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium

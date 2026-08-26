@@ -1,9 +1,9 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
 const qrcode = require('qrcode');
-const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { getJadwal } = require('./get_jadwal');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -178,14 +178,17 @@ client.on('message_create', async (msg) => {
   else if (pesan === '!jadwal' || pesan === '!getjadwal') {
     await msg.reply('⏳ Sedang mengambil data jadwal, mohon tunggu...');
 
-    exec('python3 get_jadwal.py', (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error executing python: ${error}`);
-        return msg.reply('❌ Gagal menjalankan skrip get_jadwal.py');
-      }
-      const output = stdout.trim() || '✅ Selesai memproses jadwal.';
-      msg.reply(output);
-    });
+    // Dulu ini exec('python3 get_jadwal.py', ...) — bikin proses baru tiap
+    // command masuk, dan itu yang bikin Chromium (single-process) crash pas
+    // RAM lagi ketat. Sekarang dibaca langsung di proses Node yang sama,
+    // tidak ada proses tambahan yang dibuat sama sekali.
+    try {
+      const output = getJadwal();
+      await msg.reply(output);
+    } catch (err) {
+      console.error('Error membaca jadwal:', err);
+      await msg.reply('❌ Gagal membaca jadwal.');
+    }
   }
 });
 
