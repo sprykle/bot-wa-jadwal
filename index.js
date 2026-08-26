@@ -10,6 +10,16 @@ const PORT = process.env.PORT || 3000;
 let currentQr = '';
 let isReady = false; // status koneksi WA yang SEBENARNYA — beda dari "belum ada QR"
 
+// RemoteAuth (whatsapp-web.js) punya bug yang cukup dikenal: kadang gagal baca
+// file .zip backup sesi yang baru saja ditulis (race condition di internal
+// library-nya), lalu ini nge-throw 'error' event tanpa listener -> uncaught
+// exception -> proses Node mati -> Railway auto-restart -> minta scan QR lagi.
+// Ini bukan bug di kode kita, jadi kita tangkap di level process supaya bot
+// nggak mati total gara-gara satu backup gagal.
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught exception (bot tetap jalan, tidak restart):', err.message);
+});
+
 // ================= 1. SERVER WEB SCAN QR =================
 app.get('/', async (req, res) => {
   if (isReady) {
