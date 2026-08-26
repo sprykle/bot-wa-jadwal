@@ -2,9 +2,12 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const express = require('express');
 const qrcode = require('qrcode');
 const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const WWEBJS_DATA_PATH = '/data/.wwebjs_auth';
 let currentQr = '';
 let isReady = false; // status koneksi WA yang SEBENARNYA — beda dari "belum ada QR"
 
@@ -13,6 +16,43 @@ let isReady = false; // status koneksi WA yang SEBENARNYA — beda dari "belum a
 process.on('uncaughtException', (err) => {
   console.error('⚠️ Uncaught exception (bot tetap jalan, tidak restart):', err.message);
 });
+
+// Chromium bikin file SingletonLock/SingletonCookie/SingletonSocket di folder
+// profil waktu jalan, dan menghapusnya sendiri kalau ditutup rapi. Karena
+// container Railway kadang di-restart paksa (bukan dimatikan rapi), file2 ini
+// bisa ketinggalan di dalam Volume yang persisten — lalu di startup berikutnya
+// Chromium ngira profil masih dipakai proses lain & menolak jalan ("The
+// profile appears to be in use by another Chromium process"). Karena cuma ada
+// satu instance service ini yang jalan dalam satu waktu, file kunci yang
+// ketemu di awal startup PASTI sisa lama, aman dihapus.
+function bersihkanLockChromiumLama(rootDir) {
+  const namaFileLock = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+  if (!fs.existsSync(rootDir)) return;
+
+  function jelajahi(dir) {
+    let daftar;
+    try {
+      daftar = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      return;
+    }
+    for (const entri of daftar) {
+      const fullPath = path.join(dir, entri.name);
+      if (namaFileLock.includes(entri.name)) {
+        try {
+          fs.unlinkSync(fullPath);
+          console.log(`Menghapus lock Chromium lama: ${fullPath}`);
+        } catch (e) {
+          console.error(`Gagal menghapus ${fullPath}:`, e.message);
+        }
+      } else if (entri.isDirectory()) {
+        jelajahi(fullPath);
+      }
+    }
+  }
+  jelajahi(rootDir);
+}
+bersihkanLockChromiumLama(WWEBJS_DATA_PATH);
 
 // ================= 1. SERVER WEB SCAN QR =================
 app.get('/', async (req, res) => {
@@ -67,7 +107,7 @@ app.listen(PORT, () => {
 // biasa di container, yang selalu direset tiap redeploy).
 const client = new Client({
   authStrategy: new LocalAuth({
-    dataPath: '/data/.wwebjs_auth'
+    dataPath: WWEBJS_DATA_PATH
   }),
   puppeteer: {
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
